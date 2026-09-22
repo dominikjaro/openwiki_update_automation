@@ -1,0 +1,60 @@
+## This is configured inline the trigger as well -- however this is how the pipeline steps look like. ###
+
+timeout: "4600s"
+options:
+  pool:
+    name: "YOUR_POOL_ID"
+  logging: "CLOUD_LOGGING_ONLY"
+  substitution_option: "ALLOW_LOOSE"
+
+substitutions:
+  _WORKER_POOL_NAME: "YOUR_POOL_NAME"
+  _GIT_USER_EMAIL: "YOUR_EMAIL@example.com"
+  _GIT_USER_NAME: "YOUR_NAME"
+  _GOOGLE_CLOUD_PROJECT: "YOUR_PROJECT_ID"
+  _GOOGLE_CLOUD_LOCATION: "LOCATION"
+  _OPENWIKI_PROVIDER: "gemini-enterprise"
+  _OPENWIKI_MODEL_ID: "gemini-3.6-flash"
+
+serviceAccount: "SERVICE_ACCOUNT_ID"
+
+steps:
+  # 1. Configure SSH key for authenticating with GitHub.
+  # This step is removed from here, not included in this guide
+
+  # 2. Run OpenWiki documentation generation and push updates to the target branch.
+  - name: 'IMAGE_LOCATION/docker/openwiki:latest'
+    entrypoint: "sh"
+    volumes:
+      - name: "ssh"
+        path: "/root/.ssh"
+    args:
+      - '-c'
+      - |
+        set -e
+
+        TARGET_BRANCH="${BRANCH_NAME}"
+
+        if [ -z "$$TARGET_BRANCH" ]; then
+          TARGET_BRANCH="${_HEAD_BRANCH}"
+        fi
+
+        echo "Checking out PR source branch: $$TARGET_BRANCH"
+        git remote set-url origin "git@github.com:${REPO_FULL_NAME}.git"
+        git fetch origin "$$TARGET_BRANCH"
+        git checkout "$$TARGET_BRANCH"
+
+        echo "Running OpenWiki documentation generation..."
+        openwiki code --update --print
+
+        git config user.email "${_GIT_USER_EMAIL}"
+        git config user.name "${_GIT_USER_NAME}"
+
+        git add openwiki
+        git commit -m "docs(openwiki): auto-update documentation [skip ci]" || true
+        git push origin "$$TARGET_BRANCH"
+    env:
+      - 'GOOGLE_CLOUD_PROJECT=${_GOOGLE_CLOUD_PROJECT}'
+      - 'GOOGLE_CLOUD_LOCATION=${_GOOGLE_CLOUD_LOCATION}'
+      - 'OPENWIKI_PROVIDER=${_OPENWIKI_PROVIDER}'
+      - 'OPENWIKI_MODEL=${_OPENWIKI_MODEL_ID}'
